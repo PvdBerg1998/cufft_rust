@@ -6,6 +6,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+drop_guard = "0.3.0"
+
+[dev-dependencies]
+approx = "0.5"
+fastrand = "1.6"
 
 [build-dependencies]
 bindgen = "0.59.2"

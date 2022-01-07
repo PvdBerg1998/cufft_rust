@@ -17,6 +17,11 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#![warn(clippy::all)]
+
+mod error;
+pub use error::*;
+
 pub mod bindings {
     #![allow(dead_code)]
     #![allow(non_upper_case_globals)]
