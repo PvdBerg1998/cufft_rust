@@ -1,5 +1,7 @@
 [package]
 name = "cufft_rust"
+authors = ["Pim van den Berg"]
+license-file = "LICENSE"
 version = "0.1.0"
 edition = "2021"
 
