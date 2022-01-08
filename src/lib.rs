@@ -37,16 +37,16 @@ use drop_guard::guard;
 use num_complex::Complex32;
 use num_traits::Zero;
 
-pub fn fft32_norm_one(data: &[f32]) -> Result<Box<[f32]>> {
-    fft32_norm(&[data]).map(|batch| batch.to_vec().pop().unwrap())
+pub fn fft32_norm(data: &[f32]) -> Result<Box<[f32]>> {
+    fft32_norm_batch(&[data]).map(|batch| batch.to_vec().pop().unwrap())
 }
 
-pub fn fft32_one(data: &[f32]) -> Result<Box<[Complex32]>> {
-    fft32(&[data]).map(|batch| batch.to_vec().pop().unwrap())
+pub fn fft32(data: &[f32]) -> Result<Box<[Complex32]>> {
+    fft32_batch(&[data]).map(|batch| batch.to_vec().pop().unwrap())
 }
 
-pub fn fft32_norm(batch: &[&[f32]]) -> Result<Box<[Box<[f32]>]>> {
-    match fft32(batch) {
+pub fn fft32_norm_batch(batch: &[&[f32]]) -> Result<Box<[Box<[f32]>]>> {
+    match fft32_batch(batch) {
         Ok(batch) => Ok(batch
             .to_vec()
             .into_iter()
@@ -56,7 +56,7 @@ pub fn fft32_norm(batch: &[&[f32]]) -> Result<Box<[Box<[f32]>]>> {
     }
 }
 
-pub fn fft32(batch: &[&[f32]]) -> Result<Box<[Box<[Complex32]>]>> {
+pub fn fft32_batch(batch: &[&[f32]]) -> Result<Box<[Box<[Complex32]>]>> {
     unsafe {
         // Amount of datasets in the batch
         let n_batch = batch.len();
@@ -183,7 +183,7 @@ fn test_fft() {
         .map(|x| x as f32 / 100.0 * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let fft = fft32_norm_one(&y).unwrap();
+    let fft = fft32_norm(&y).unwrap();
 
     // f = k/T so 1=k/100 -> k=100
     assert!(fft[100] > fft[99]);
@@ -210,7 +210,7 @@ fn test_fft_batch() {
         .map(|x| x as f32 / 2.0f32.powi(8) * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let batch = fft32_norm(&[y.as_ref(); 100]).unwrap();
+    let batch = fft32_norm_batch(&[y.as_ref(); 100]).unwrap();
 
     let fft_0 = &batch[0];
     for fft in batch.iter() {
