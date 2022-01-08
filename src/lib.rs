@@ -37,51 +37,98 @@ use drop_guard::guard;
 use num_complex::Complex32;
 use num_traits::Zero;
 
-pub fn forward_transform_f32_norm(data: &[f32]) -> Result<Box<[f32]>> {
-    forward_transform_f32(data).map(|fft| fft.to_vec().into_iter().map(|z| z.norm()).collect())
+pub fn fft32_norm_one(data: &[f32]) -> Result<Box<[f32]>> {
+    fft32_norm(&[data]).map(|batch| batch.to_vec().pop().unwrap())
 }
 
-pub fn forward_transform_f32(data: &[f32]) -> Result<Box<[Complex32]>> {
+pub fn fft32_one(data: &[f32]) -> Result<Box<[Complex32]>> {
+    fft32(&[data]).map(|batch| batch.to_vec().pop().unwrap())
+}
+
+pub fn fft32_norm(batch: &[&[f32]]) -> Result<Box<[Box<[f32]>]>> {
+    match fft32(batch) {
+        Ok(batch) => Ok(batch
+            .to_vec()
+            .into_iter()
+            .map(|fft| fft.to_vec().into_iter().map(|z| z.norm()).collect())
+            .collect()),
+        Err(e) => Err(e),
+    }
+}
+
+pub fn fft32(batch: &[&[f32]]) -> Result<Box<[Box<[Complex32]>]>> {
     unsafe {
-        if data.len() == 0 {
+        // Amount of datasets in the batch
+        let n_batch = batch.len();
+        // Amount of points per dataset
+        let n = batch[0].len();
+        // Amount of complex values per DFT of a dataset
+        let n_dft = n / 2 + 1;
+
+        // Deal with empty datasets
+        if n_batch == 0 {
             return Ok(Box::new([]));
         }
+        if n == 0 {
+            return Ok(vec![Box::new([]) as Box<[Complex32]>; n_batch].into_boxed_slice());
+        }
 
-        let mut plan: cufftHandle = 0;
-        let mut gpu_data_in: *mut cufftReal = std::ptr::null_mut();
-        let mut gpu_data_out: *mut cufftComplex = std::ptr::null_mut();
+        // Check data length uniformity
+        for &data in batch {
+            if data.len() != n {
+                return Err(CudaError::InvalidValue);
+            }
+        }
 
-        let in_len = (std::mem::size_of::<cufftReal>() * data.len()) as u64;
-        let out_len = (std::mem::size_of::<cufftComplex>() * (data.len() / 2 + 1)) as u64;
+        // Byte size of a dataset
+        let bytes_single = std::mem::size_of::<cufftReal>() * n;
+        // Byte size of the batch
+        let bytes_batch = bytes_single * n_batch;
+        // Byte size of the DFT of a dataset
+        let bytes_single_dft = std::mem::size_of::<cufftComplex>() * n_dft;
+        // Byte size of the DFT batch
+        let bytes_batch_dft = bytes_single_dft * n_batch;
 
         // Prepare plan
+        let mut plan: cufftHandle = 0;
         CudaError::from_raw(cufftPlan1d(
             &mut plan,
-            data.len() as i32,
+            n as i32,
             cufftType_t_CUFFT_R2C,
-            1,
+            n_batch as i32,
         ))?;
         let plan = guard(plan, |plan| {
             let _ = cufftDestroy(plan);
         });
 
         // Allocate space on GPU
-        CudaError::from_raw(cudaMalloc(&mut gpu_data_in as *mut _ as *mut _, in_len))?;
+        let mut gpu_data_in: *mut cufftReal = std::ptr::null_mut();
+        CudaError::from_raw(cudaMalloc(
+            &mut gpu_data_in as *mut _ as *mut _,
+            bytes_batch as u64,
+        ))?;
         let gpu_data_in = guard(gpu_data_in, |gpu_data_in| {
             let _ = cudaFree(gpu_data_in as *mut _);
         });
-        CudaError::from_raw(cudaMalloc(&mut gpu_data_out as *mut _ as *mut _, out_len))?;
+
+        let mut gpu_data_out: *mut cufftComplex = std::ptr::null_mut();
+        CudaError::from_raw(cudaMalloc(
+            &mut gpu_data_out as *mut _ as *mut _,
+            bytes_batch_dft as u64,
+        ))?;
         let gpu_data_out = guard(gpu_data_out, |gpu_data_out| {
             let _ = cudaFree(gpu_data_out as *mut _);
         });
 
         // Initialize GPU memory
-        CudaError::from_raw(cudaMemcpy(
-            *gpu_data_in as *mut _,
-            data.as_ptr() as *const _,
-            std::mem::size_of_val(data) as u64,
-            cudaMemcpyKind_cudaMemcpyHostToDevice,
-        ))?;
+        for (i, &data) in batch.iter().enumerate() {
+            CudaError::from_raw(cudaMemcpy(
+                (*gpu_data_in).offset((n * i) as isize) as *mut _,
+                data.as_ptr() as *const _,
+                bytes_single as u64,
+                cudaMemcpyKind_cudaMemcpyHostToDevice,
+            ))?;
+        }
 
         // Execute FFT
         // Unnormalized
@@ -89,18 +136,19 @@ pub fn forward_transform_f32(data: &[f32]) -> Result<Box<[Complex32]>> {
         CudaError::from_raw(cufftExecR2C(*plan, *gpu_data_in, *gpu_data_out))?;
         CudaError::from_raw(cudaDeviceSynchronize())?;
 
-        // Retrieve result
+        // Retrieve results
         // Safety: Complex32 is repr(C) and has the same layout as cufftComplex
-        let mut buf = vec![Complex32::zero(); data.len() / 2 + 1].into_boxed_slice();
-        debug_assert_eq!(std::mem::size_of_val(buf.as_ref()), out_len as usize);
-        CudaError::from_raw(cudaMemcpy(
-            buf.as_mut_ptr() as *mut _,
-            *gpu_data_out as *const _ as *const _,
-            out_len,
-            cudaMemcpyKind_cudaMemcpyDeviceToHost,
-        ))?;
+        let mut buf = vec![vec![Complex32::zero(); n_dft].into_boxed_slice(); n_batch];
+        for (i, out) in buf.iter_mut().enumerate() {
+            CudaError::from_raw(cudaMemcpy(
+                out.as_mut_ptr() as *mut _,
+                (*gpu_data_out).offset((i * n_dft) as isize) as *const _ as *const _,
+                bytes_single_dft as u64,
+                cudaMemcpyKind_cudaMemcpyDeviceToHost,
+            ))?;
+        }
 
-        Ok(buf)
+        Ok(buf.into_boxed_slice())
     }
 }
 
@@ -135,7 +183,7 @@ fn test_fft() {
         .map(|x| x as f32 / 100.0 * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let fft = forward_transform_f32_norm(&y).unwrap();
+    let fft = fft32_norm_one(&y).unwrap();
 
     // f = k/T so 1=k/100 -> k=100
     assert!(fft[100] > fft[99]);
@@ -153,4 +201,19 @@ fn test_fft() {
     //     }
     // }
     // store("test_fft.csv", &x, &y);
+}
+
+#[test]
+fn test_fft_batch() {
+    // Generate test data
+    let y = (0..2u64.pow(10))
+        .map(|x| x as f32 / 2.0f32.powi(8) * std::f32::consts::TAU)
+        .map(|x| x.cos())
+        .collect::<Vec<_>>();
+    let batch = fft32_norm(&[y.as_ref(); 100]).unwrap();
+
+    let fft_0 = &batch[0];
+    for fft in batch.iter() {
+        approx::assert_abs_diff_eq!(fft_0.as_ref(), fft.as_ref());
+    }
 }
