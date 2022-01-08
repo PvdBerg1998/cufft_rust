@@ -20,9 +20,13 @@
 use crate::bindings::*;
 use std::error::Error;
 use std::fmt;
-use std::os::raw::c_int;
 
 pub type Result<T> = std::result::Result<T, CudaError>;
+
+#[cfg(windows)]
+type ErrorInt = i32;
+#[cfg(unix)]
+type ErrorInt = u32;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -33,11 +37,11 @@ pub enum CudaError {
     InsufficientDriver,
     NoDevice,
     InvalidResourceHandle,
-    Other(c_int),
+    Other(ErrorInt),
 }
 
-impl Into<c_int> for CudaError {
-    fn into(self) -> c_int {
+impl Into<ErrorInt> for CudaError {
+    fn into(self) -> ErrorInt {
         match self {
             Self::InvalidValue => cudaError_cudaErrorInvalidValue,
             Self::MemoryAllocation => cudaError_cudaErrorMemoryAllocation,
@@ -52,7 +56,7 @@ impl Into<c_int> for CudaError {
 
 #[allow(non_upper_case_globals)]
 impl CudaError {
-    pub(crate) fn from_raw(raw: c_int) -> Result<()> {
+    pub(crate) fn from_raw(raw: ErrorInt) -> Result<()> {
         match raw {
             cudaError_cudaSuccess => Ok(()),
             cudaError_cudaErrorInvalidValue => Err(CudaError::InvalidValue),
