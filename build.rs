@@ -2,26 +2,22 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let nvidia_path = PathBuf::from(env::var("CUDA_PATH").unwrap());
+    let (bin_path, header_path) = if cfg!(windows) {
+        let base_path = PathBuf::from(env::var("CUDA_PATH").unwrap());
+        (base_path.join("lib/x64/"), base_path.join("include"))
+    } else {
+        todo!("Unsupported platform")
+    };
+
     println!("cargo:rustc-link-lib=dylib=cudart");
     println!("cargo:rustc-link-lib=dylib=cufft");
     //println!("cargo:rustc-link-lib=static=legacy_stdio_definitions");
 
-    if cfg!(windows) {
-        println!(
-            "cargo:rustc-link-search={}",
-            nvidia_path.join("lib/x64/").to_str().unwrap()
-        );
-    } else {
-        todo!("Unsupported platform");
-    }
+    println!("cargo:rustc-link-search={}", bin_path.to_str().unwrap());
 
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
-        .clang_arg(format!(
-            "-I{}",
-            nvidia_path.join("include").to_str().unwrap()
-        ))
+        .clang_arg(format!("-I{}", header_path.to_str().unwrap()))
         .clang_arg("-x")
         .clang_arg("c++")
         .clang_arg("-Wno-everything")

@@ -124,6 +124,8 @@ dependencies = [
  "bindgen",
  "drop_guard",
  "fastrand",
+ "num-complex",
+ "num-traits",
 ]
 
 [[package]]
@@ -248,6 +250,15 @@ dependencies = [
  "memchr",
  "minimal-lexical",
  "version_check",
+]
+
+[[package]]
+name = "num-complex"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26873667bbbb7c5182d4a37c1add32cdf09f841af72da53318fdb81543c15085"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]

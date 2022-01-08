@@ -27,7 +27,6 @@ pub type Result<T> = std::result::Result<T, CudaError>;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CudaError {
-    Success,
     InvalidValue,
     MemoryAllocation,
     Initialization,
@@ -37,18 +36,32 @@ pub enum CudaError {
     Other(c_int),
 }
 
+impl Into<c_int> for CudaError {
+    fn into(self) -> c_int {
+        match self {
+            Self::InvalidValue => cudaError_cudaErrorInvalidValue,
+            Self::MemoryAllocation => cudaError_cudaErrorMemoryAllocation,
+            Self::Initialization => cudaError_cudaErrorInitializationError,
+            Self::InsufficientDriver => cudaError_cudaErrorInsufficientDriver,
+            Self::NoDevice => cudaError_cudaErrorNoDevice,
+            Self::InvalidResourceHandle => cudaError_cudaErrorInvalidResourceHandle,
+            Self::Other(x) => x,
+        }
+    }
+}
+
 #[allow(non_upper_case_globals)]
-impl From<c_int> for CudaError {
-    fn from(i: c_int) -> Self {
-        match i {
-            cudaError_cudaSuccess => CudaError::Success,
-            cudaError_cudaErrorInvalidValue => CudaError::InvalidValue,
-            cudaError_cudaErrorMemoryAllocation => CudaError::MemoryAllocation,
-            cudaError_cudaErrorInitializationError => CudaError::Initialization,
-            cudaError_cudaErrorInsufficientDriver => CudaError::InsufficientDriver,
-            cudaError_cudaErrorNoDevice => CudaError::NoDevice,
-            cudaError_cudaErrorInvalidResourceHandle => CudaError::InvalidResourceHandle,
-            other => CudaError::Other(other),
+impl CudaError {
+    pub(crate) fn from_raw(raw: c_int) -> Result<()> {
+        match raw {
+            cudaError_cudaSuccess => Ok(()),
+            cudaError_cudaErrorInvalidValue => Err(CudaError::InvalidValue),
+            cudaError_cudaErrorMemoryAllocation => Err(CudaError::MemoryAllocation),
+            cudaError_cudaErrorInitializationError => Err(CudaError::Initialization),
+            cudaError_cudaErrorInsufficientDriver => Err(CudaError::InsufficientDriver),
+            cudaError_cudaErrorNoDevice => Err(CudaError::NoDevice),
+            cudaError_cudaErrorInvalidResourceHandle => Err(CudaError::InvalidResourceHandle),
+            other => Err(CudaError::Other(other)),
         }
     }
 }
