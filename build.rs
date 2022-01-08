@@ -4,7 +4,14 @@ use std::path::PathBuf;
 fn main() {
     let (bin_path, header_path) = if cfg!(windows) {
         let base_path = PathBuf::from(env::var("CUDA_PATH").unwrap());
-        (base_path.join("lib/x64/"), base_path.join("include"))
+        (base_path.join("lib/x64"), base_path.join("include"))
+    } else if cfg!(unix) {
+        if cfg!(target_os = "arch") && cfg!(target_pointer_width = "64") {
+            let base_path = PathBuf::from("/opt/cuda/targets/x86_64-linux/");
+            (base_path.join("lib"), base_path.join("include"))
+        } else {
+            todo!("Unsupported OS");
+        }
     } else {
         todo!("Unsupported platform")
     };
