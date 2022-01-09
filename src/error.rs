@@ -23,11 +23,6 @@ use std::fmt;
 
 pub type Result<T> = std::result::Result<T, CudaError>;
 
-#[cfg(windows)]
-type ErrorInt = i32;
-#[cfg(unix)]
-type ErrorInt = u32;
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CudaError {
@@ -37,11 +32,11 @@ pub enum CudaError {
     InsufficientDriver,
     NoDevice,
     InvalidResourceHandle,
-    Other(ErrorInt),
+    Other(cudaError),
 }
 
-impl Into<ErrorInt> for CudaError {
-    fn into(self) -> ErrorInt {
+impl Into<cudaError> for CudaError {
+    fn into(self) -> cudaError {
         match self {
             Self::InvalidValue => cudaError_cudaErrorInvalidValue,
             Self::MemoryAllocation => cudaError_cudaErrorMemoryAllocation,
@@ -56,7 +51,7 @@ impl Into<ErrorInt> for CudaError {
 
 #[allow(non_upper_case_globals)]
 impl CudaError {
-    pub(crate) fn from_raw(raw: ErrorInt) -> Result<()> {
+    pub(crate) fn from_raw(raw: cudaError) -> Result<()> {
         match raw {
             cudaError_cudaSuccess => Ok(()),
             cudaError_cudaErrorInvalidValue => Err(CudaError::InvalidValue),

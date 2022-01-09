@@ -105,7 +105,7 @@ pub fn fft32_batch(batch: &[&[f32]]) -> Result<Box<[Box<[Complex32]>]>> {
         let mut gpu_data_in: *mut cufftReal = std::ptr::null_mut();
         CudaError::from_raw(cudaMalloc(
             &mut gpu_data_in as *mut _ as *mut _,
-            bytes_batch as u64,
+            bytes_batch as size_t,
         ))?;
         let gpu_data_in = guard(gpu_data_in, |gpu_data_in| {
             let _ = cudaFree(gpu_data_in as *mut _);
@@ -114,7 +114,7 @@ pub fn fft32_batch(batch: &[&[f32]]) -> Result<Box<[Box<[Complex32]>]>> {
         let mut gpu_data_out: *mut cufftComplex = std::ptr::null_mut();
         CudaError::from_raw(cudaMalloc(
             &mut gpu_data_out as *mut _ as *mut _,
-            bytes_batch_dft as u64,
+            bytes_batch_dft as size_t,
         ))?;
         let gpu_data_out = guard(gpu_data_out, |gpu_data_out| {
             let _ = cudaFree(gpu_data_out as *mut _);
@@ -125,7 +125,7 @@ pub fn fft32_batch(batch: &[&[f32]]) -> Result<Box<[Box<[Complex32]>]>> {
             CudaError::from_raw(cudaMemcpy(
                 (*gpu_data_in).offset((n * i) as isize) as *mut _,
                 data.as_ptr() as *const _,
-                bytes_single as u64,
+                bytes_single as size_t,
                 cudaMemcpyKind_cudaMemcpyHostToDevice,
             ))?;
         }
@@ -143,7 +143,7 @@ pub fn fft32_batch(batch: &[&[f32]]) -> Result<Box<[Box<[Complex32]>]>> {
             CudaError::from_raw(cudaMemcpy(
                 out.as_mut_ptr() as *mut _,
                 (*gpu_data_out).offset((i * n_dft) as isize) as *const _ as *const _,
-                bytes_single_dft as u64,
+                bytes_single_dft as size_t,
                 cudaMemcpyKind_cudaMemcpyDeviceToHost,
             ))?;
         }
@@ -179,28 +179,15 @@ fn test_cuda_device() {
 #[test]
 fn test_fft() {
     // Generate test data
-    let y = (0..10_000)
+    let y = (0..2u64.pow(14)) // 16384
         .map(|x| x as f32 / 100.0 * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
     let fft = fft32_norm(&y).unwrap();
 
-    // f = k/T so 1=k/100 -> k=100
-    assert!(fft[100] > fft[99]);
-    assert!(fft[100] > fft[101]);
-
-    // f = k/T
-    // let x = (0..10_000).map(|x| x as f32 / 100.0).collect::<Vec<_>>();
-    // let y = fft;
-
-    // fn store<'a, 'b>(to: &str, x: &[f32], y: &[f32]) {
-    //     use std::io::{BufWriter, Write};
-    //     let mut out = BufWriter::with_capacity(2usize.pow(16), std::fs::File::create(to).unwrap());
-    //     for (x, y) in x.iter().zip(y.iter()) {
-    //         writeln!(&mut out, "{:.4},{:.4}", *x, *y).unwrap();
-    //     }
-    // }
-    // store("test_fft.csv", &x, &y);
+    // f = k/T so 1=k/(16384 / 100) -> k=164
+    assert!(fft[164] > fft[163]);
+    assert!(fft[164] > fft[165]);
 }
 
 #[test]

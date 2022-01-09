@@ -12,11 +12,12 @@ fn main() {
         todo!("Unsupported platform")
     };
 
+    println!("cargo:rustc-link-search={}", bin_path.to_str().unwrap());
     println!("cargo:rustc-link-lib=dylib=cudart");
     println!("cargo:rustc-link-lib=dylib=cufft");
     //println!("cargo:rustc-link-lib=static=legacy_stdio_definitions");
 
-    println!("cargo:rustc-link-search={}", bin_path.to_str().unwrap());
+    println!("cargo:rerun-if-changed=wrapper.h");
 
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
