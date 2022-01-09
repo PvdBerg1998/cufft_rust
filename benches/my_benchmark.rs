@@ -13,6 +13,18 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("fft32 2^20 batch 100", |b| {
         b.iter_with_large_drop(|| fft32_batch(&[y.as_ref(); 100]))
     });
+
+    // Prepare data
+    let y = (0..2u64.pow(20))
+        .map(|x| x as f64 / 2.0f64.powi(18) * std::f64::consts::TAU)
+        .map(|x| x.cos())
+        .collect::<Vec<_>>();
+    c.bench_function("fft64 2^20", |b| {
+        b.iter_with_large_drop(|| fft64(y.as_ref()))
+    });
+    c.bench_function("fft64 2^20 batch 100", |b| {
+        b.iter_with_large_drop(|| fft64_batch(&[y.as_ref(); 100]))
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);
