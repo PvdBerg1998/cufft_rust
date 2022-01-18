@@ -37,6 +37,40 @@ use drop_guard::guard;
 use num_complex::{Complex32, Complex64};
 use num_traits::Zero;
 
+pub fn gpu_count() -> usize {
+    unsafe {
+        let mut count = 0i32;
+        cudaGetDeviceCount(&mut count);
+        count as usize
+    }
+}
+
+pub fn first_gpu_name() -> Result<String> {
+    unsafe {
+        check_device()?;
+
+        let mut properties = std::mem::MaybeUninit::<cudaDeviceProp>::uninit();
+        CudaError::from_raw(cudaGetDeviceProperties(properties.as_mut_ptr(), 0))?;
+        let properties = properties.assume_init();
+
+        let name_len = properties.name.iter().position(|&x| x == 0).unwrap() + 1;
+        let name = std::ffi::CStr::from_bytes_with_nul(std::slice::from_raw_parts(
+            properties.name.as_ptr() as *const u8,
+            name_len,
+        ))
+        .unwrap();
+        Ok(name.to_str().unwrap().to_owned())
+    }
+}
+
+fn check_device() -> Result<()> {
+    if gpu_count() == 0 {
+        Err(CudaError::NoDevice)
+    } else {
+        Ok(())
+    }
+}
+
 /*
     f32 helpers
 */
@@ -98,6 +132,8 @@ pub fn fft64_batch(batch: &[&[f64]]) -> Result<Box<[Box<[Complex64]>]>> {
 unsafe fn fft_batch<MODE: FFTMode>(
     batch: &[&[MODE::Float]],
 ) -> Result<Box<[Box<[MODE::Complex]>]>> {
+    check_device()?;
+
     // Amount of datasets in the batch
     let n_batch = batch.len();
     // Amount of points per dataset
@@ -248,24 +284,8 @@ unsafe impl FFTMode for FFT64 {
 #[test]
 fn test_cuda_device() {
     unsafe {
-        let mut count = 0i32;
-        cudaGetDeviceCount(&mut count);
-        dbg!(count);
-
-        if count >= 1 {
-            let mut properties = std::mem::MaybeUninit::<cudaDeviceProp>::uninit();
-            let status = cudaGetDeviceProperties(properties.as_mut_ptr(), 0);
-            assert!(CudaError::from_raw(status).is_ok());
-            let properties = properties.assume_init();
-            //dbg!(properties);
-            let name_len = properties.name.iter().position(|&x| x == 0).unwrap() + 1;
-            let name = std::ffi::CStr::from_bytes_with_nul(std::slice::from_raw_parts(
-                properties.name.as_ptr() as *const u8,
-                name_len,
-            ))
-            .unwrap();
-            dbg!(name.to_str().unwrap());
-        }
+        dbg!(gpu_count());
+        dbg!(first_gpu_name().unwrap());
     }
 }
 
