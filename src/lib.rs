@@ -75,15 +75,15 @@ fn check_device() -> Result<()> {
     f32 helpers
 */
 
-pub fn fft32_norm(data: &[f32]) -> Result<Box<[f32]>> {
+pub fn fft32_norm(data: &[f32]) -> Result<Vec<f32>> {
     fft32_norm_batch(&[data]).map(|batch| batch.to_vec().pop().unwrap())
 }
 
-pub fn fft32(data: &[f32]) -> Result<Box<[Complex32]>> {
+pub fn fft32(data: &[f32]) -> Result<Vec<Complex32>> {
     fft32_batch(&[data]).map(|batch| batch.to_vec().pop().unwrap())
 }
 
-pub fn fft32_norm_batch(batch: &[&[f32]]) -> Result<Box<[Box<[f32]>]>> {
+pub fn fft32_norm_batch(batch: &[&[f32]]) -> Result<Vec<Vec<f32>>> {
     match fft32_batch(batch) {
         Ok(batch) => Ok(batch
             .to_vec()
@@ -94,7 +94,7 @@ pub fn fft32_norm_batch(batch: &[&[f32]]) -> Result<Box<[Box<[f32]>]>> {
     }
 }
 
-pub fn fft32_batch(batch: &[&[f32]]) -> Result<Box<[Box<[Complex32]>]>> {
+pub fn fft32_batch(batch: &[&[f32]]) -> Result<Vec<Vec<Complex32>>> {
     unsafe { fft_batch::<FFT32>(batch) }
 }
 
@@ -102,15 +102,15 @@ pub fn fft32_batch(batch: &[&[f32]]) -> Result<Box<[Box<[Complex32]>]>> {
     f64 helpers
 */
 
-pub fn fft64_norm(data: &[f64]) -> Result<Box<[f64]>> {
+pub fn fft64_norm(data: &[f64]) -> Result<Vec<f64>> {
     fft64_norm_batch(&[data]).map(|batch| batch.to_vec().pop().unwrap())
 }
 
-pub fn fft64(data: &[f64]) -> Result<Box<[Complex64]>> {
+pub fn fft64(data: &[f64]) -> Result<Vec<Complex64>> {
     fft64_batch(&[data]).map(|batch| batch.to_vec().pop().unwrap())
 }
 
-pub fn fft64_norm_batch(batch: &[&[f64]]) -> Result<Box<[Box<[f64]>]>> {
+pub fn fft64_norm_batch(batch: &[&[f64]]) -> Result<Vec<Vec<f64>>> {
     match fft64_batch(batch) {
         Ok(batch) => Ok(batch
             .to_vec()
@@ -121,7 +121,7 @@ pub fn fft64_norm_batch(batch: &[&[f64]]) -> Result<Box<[Box<[f64]>]>> {
     }
 }
 
-pub fn fft64_batch(batch: &[&[f64]]) -> Result<Box<[Box<[Complex64]>]>> {
+pub fn fft64_batch(batch: &[&[f64]]) -> Result<Vec<Vec<Complex64>>> {
     unsafe { fft_batch::<FFT64>(batch) }
 }
 
@@ -129,9 +129,7 @@ pub fn fft64_batch(batch: &[&[f64]]) -> Result<Box<[Box<[Complex64]>]>> {
     Generic implementation
 */
 
-unsafe fn fft_batch<MODE: FFTMode>(
-    batch: &[&[MODE::Float]],
-) -> Result<Box<[Box<[MODE::Complex]>]>> {
+unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<MODE::Complex>>> {
     check_device()?;
 
     // Amount of datasets in the batch
@@ -143,10 +141,10 @@ unsafe fn fft_batch<MODE: FFTMode>(
 
     // Deal with empty datasets
     if n_batch == 0 {
-        return Ok(Box::new([]));
+        return Ok(vec![]);
     }
     if n == 0 {
-        return Ok(vec![Box::new([]) as Box<[_]>; n_batch].into_boxed_slice());
+        return Ok(vec![vec![]; n_batch]);
     }
 
     // Check data length uniformity
@@ -214,7 +212,7 @@ unsafe fn fft_batch<MODE: FFTMode>(
 
     // Retrieve results
     // Safety: Complex32/64 is repr(C) and has the same layout as cufftComplex/cufftDoubleComplex
-    let mut buf = vec![vec![MODE::Complex::zero(); n_dft].into_boxed_slice(); n_batch];
+    let mut buf = vec![vec![MODE::Complex::zero(); n_dft]; n_batch];
     for (i, out) in buf.iter_mut().enumerate() {
         CudaError::from_raw(cudaMemcpy(
             out.as_mut_ptr() as *mut _,
@@ -224,7 +222,7 @@ unsafe fn fft_batch<MODE: FFTMode>(
         ))?;
     }
 
-    Ok(buf.into_boxed_slice())
+    Ok(buf)
 }
 
 unsafe trait FFTMode {
@@ -283,10 +281,8 @@ unsafe impl FFTMode for FFT64 {
 
 #[test]
 fn test_cuda_device() {
-    unsafe {
-        dbg!(gpu_count());
-        dbg!(first_gpu_name().unwrap());
-    }
+    dbg!(gpu_count());
+    dbg!(first_gpu_name().unwrap());
 }
 
 #[test]
@@ -314,7 +310,7 @@ fn test_fft32_batch() {
 
     let fft_0 = &batch[0];
     for fft in batch.iter() {
-        approx::assert_abs_diff_eq!(fft_0.as_ref(), fft.as_ref());
+        approx::assert_abs_diff_eq!(fft_0.as_slice(), fft.as_slice());
     }
 }
 
@@ -343,6 +339,6 @@ fn test_fft64_batch() {
 
     let fft_0 = &batch[0];
     for fft in batch.iter() {
-        approx::assert_abs_diff_eq!(fft_0.as_ref(), fft.as_ref());
+        approx::assert_abs_diff_eq!(fft_0.as_slice(), fft.as_slice());
     }
 }
