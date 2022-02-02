@@ -6,8 +6,9 @@ fn main() {
         let base_path = PathBuf::from(env::var("CUDA_PATH").unwrap());
         (base_path.join("lib/x64"), base_path.join("include"))
     } else if cfg!(unix) {
-        let base_path = PathBuf::from("/opt/cuda/targets/x86_64-linux/");
-        (base_path.join("lib"), base_path.join("include"))
+        //let base_path = PathBuf::from("/opt/cuda/targets/x86_64-linux/");
+		let base_path = PathBuf::from("/usr/local/cuda/");
+        (base_path.join("lib64"), base_path.join("include"))
     } else {
         todo!("Unsupported platform")
     };
