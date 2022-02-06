@@ -6,9 +6,18 @@ fn main() {
         let base_path = PathBuf::from(env::var("CUDA_PATH").unwrap());
         (base_path.join("lib/x64"), base_path.join("include"))
     } else if cfg!(unix) {
-        //let base_path = PathBuf::from("/opt/cuda/targets/x86_64-linux/");
-		let base_path = PathBuf::from("/usr/local/cuda/");
-        (base_path.join("lib64"), base_path.join("include"))
+        pkg_config::Config::new()
+            .atleast_version("11.0")
+            .probe("cuda")
+            .ok()
+            .and_then(|mut lib| Some((lib.link_paths.pop()?, lib.include_paths.pop()?)))
+            .unwrap_or_else(|| {
+                // Guess default locations
+                (
+                    PathBuf::from("/usr/local/cuda/lib64"),
+                    PathBuf::from("/usr/local/cuda/include"),
+                )
+            })
     } else {
         todo!("Unsupported platform")
     };
