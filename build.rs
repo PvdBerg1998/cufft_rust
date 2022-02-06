@@ -1,26 +1,7 @@
-use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let (bin_path, header_path) = if cfg!(windows) {
-        let base_path = PathBuf::from(env::var("CUDA_PATH").unwrap());
-        (base_path.join("lib/x64"), base_path.join("include"))
-    } else if cfg!(unix) {
-        pkg_config::Config::new()
-            .atleast_version("11.0")
-            .probe("cuda")
-            .ok()
-            .and_then(|mut lib| Some((lib.link_paths.pop()?, lib.include_paths.pop()?)))
-            .unwrap_or_else(|| {
-                // Guess default locations
-                (
-                    PathBuf::from("/usr/local/cuda/lib64"),
-                    PathBuf::from("/usr/local/cuda/include"),
-                )
-            })
-    } else {
-        todo!("Unsupported platform")
-    };
+    let (bin_path, header_path) = paths();
 
     println!("cargo:rustc-link-search={}", bin_path.to_str().unwrap());
     println!("cargo:rustc-link-lib=dylib=cudart");
@@ -48,4 +29,31 @@ fn main() {
     bindings
         .write_to_file("bindings.rs")
         .expect("Couldn't write bindings!");
+}
+
+#[cfg(windows)]
+fn paths() -> (PathBuf, PathBuf) {
+    let base_path = PathBuf::from(std::env::var("CUDA_PATH").unwrap());
+    (base_path.join("lib/x64"), base_path.join("include"))
+}
+
+#[cfg(unix)]
+fn paths() -> (PathBuf, PathBuf) {
+    pkg_config::Config::new()
+        .atleast_version("11.0")
+        .probe("cuda")
+        .ok()
+        .and_then(|mut lib| Some((lib.link_paths.pop()?, lib.include_paths.pop()?)))
+        .unwrap_or_else(|| {
+            // Guess default locations
+            (
+                PathBuf::from("/usr/local/cuda/lib64"),
+                PathBuf::from("/usr/local/cuda/include"),
+            )
+        })
+}
+
+#[cfg(all(not(windows), not(unix)))]
+fn paths() -> ! {
+    unimplemented!("Unsupported target");
 }
