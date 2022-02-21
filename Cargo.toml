@@ -2,7 +2,7 @@
 name = "cufft_rust"
 authors = ["Pim van den Berg"]
 license-file = "LICENSE"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [dependencies]

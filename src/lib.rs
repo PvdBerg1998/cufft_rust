@@ -63,6 +63,18 @@ pub fn first_gpu_name() -> Result<String> {
     }
 }
 
+pub fn first_gpu_memory_bytes() -> Result<u64> {
+    unsafe {
+        check_device()?;
+
+        let mut properties = std::mem::MaybeUninit::<cudaDeviceProp>::uninit();
+        CudaError::from_raw(cudaGetDeviceProperties(properties.as_mut_ptr(), 0))?;
+        let properties = properties.assume_init();
+
+        Ok(properties.totalGlobalMem)
+    }
+}
+
 fn check_device() -> Result<()> {
     if gpu_count() == 0 {
         Err(CudaError::NoDevice)
@@ -283,6 +295,8 @@ unsafe impl FFTMode for FFT64 {
 fn test_cuda_device() {
     dbg!(gpu_count());
     dbg!(first_gpu_name().unwrap());
+    let megabytes = first_gpu_memory_bytes().unwrap() / 10u64.pow(6);
+    dbg!(megabytes);
 }
 
 #[test]
