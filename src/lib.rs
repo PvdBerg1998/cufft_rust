@@ -224,7 +224,10 @@ unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<M
 
     // Retrieve results
     // Safety: Complex32/64 is repr(C) and has the same layout as cufftComplex/cufftDoubleComplex
-    let mut buf = vec![vec![MODE::Complex::zero(); n_dft]; n_batch];
+    // NB. vec![Vec::with_capacity()] does NOT keep the capacity between the cloned values!
+    let mut buf = (0..n_batch)
+        .map(|_| Vec::<MODE::Complex>::with_capacity(n_dft))
+        .collect::<Vec<_>>();
     for (i, out) in buf.iter_mut().enumerate() {
         CudaError::from_raw(cudaMemcpy(
             out.as_mut_ptr() as *mut _,
@@ -232,6 +235,9 @@ unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<M
             bytes_single_dft as size_t,
             cudaMemcpyKind_cudaMemcpyDeviceToHost,
         ))?;
+
+        // Safety: cudaMemcpy will initialize all n_dft values
+        out.set_len(n_dft);
     }
 
     Ok(buf)
@@ -241,8 +247,8 @@ unsafe trait FFTMode {
     type Float: Copy + Clone;
     type Complex: Copy + Clone + Zero;
 
-    type CudaIn;
-    type CudaOut;
+    type CudaIn: Copy + Clone;
+    type CudaOut: Copy + Clone;
 
     const FFT_TYPE: cufftType_t;
 
