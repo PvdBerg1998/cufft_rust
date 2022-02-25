@@ -3,7 +3,7 @@ authors = ["Pim van den Berg"]
 edition = "2021"
 license-file = "LICENSE"
 name = "cufft_rust"
-version = "0.2.3"
+version = "0.3.0"
 
 [dependencies]
 drop_guard = "0.3.0"

@@ -247,7 +247,7 @@ dependencies = [
 
 [[package]]
 name = "cufft_rust"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "approx",
  "bindgen",

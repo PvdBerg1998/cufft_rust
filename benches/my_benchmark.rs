@@ -1,5 +1,6 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use cufft_rust::*;
+use std::time::{Duration, Instant};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     // Prepare data
@@ -7,11 +8,33 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         .map(|x| x as f32 / 2.0f32.powi(18) * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
+
     c.bench_function("fft32 2^20", |b| {
-        b.iter_with_large_drop(|| fft32(y.as_ref()))
+        b.iter_custom(|iters| {
+            let mut dt = Duration::default();
+            for _i in 0..iters {
+                let data = y.clone();
+                let start = Instant::now();
+                let res = black_box(fft32(data));
+                dt += start.elapsed();
+                drop(res);
+            }
+            dt
+        })
     });
+
     c.bench_function("fft32 2^20 batch 100", |b| {
-        b.iter_with_large_drop(|| fft32_batch(&[y.as_ref(); 100]))
+        b.iter_custom(|iters| {
+            let mut dt = Duration::default();
+            for _i in 0..iters {
+                let data = vec![y.clone(); 100];
+                let start = Instant::now();
+                let res = black_box(fft32_batch(data));
+                dt += start.elapsed();
+                drop(res);
+            }
+            dt
+        })
     });
 
     // Prepare data
@@ -19,11 +42,33 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         .map(|x| x as f64 / 2.0f64.powi(18) * std::f64::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
+
     c.bench_function("fft64 2^20", |b| {
-        b.iter_with_large_drop(|| fft64(y.as_ref()))
+        b.iter_custom(|iters| {
+            let mut dt = Duration::default();
+            for _i in 0..iters {
+                let data = y.clone();
+                let start = Instant::now();
+                let res = black_box(fft64(data));
+                dt += start.elapsed();
+                drop(res);
+            }
+            dt
+        })
     });
+
     c.bench_function("fft64 2^20 batch 100", |b| {
-        b.iter_with_large_drop(|| fft64_batch(&[y.as_ref(); 100]))
+        b.iter_custom(|iters| {
+            let mut dt = Duration::default();
+            for _i in 0..iters {
+                let data = vec![y.clone(); 100];
+                let start = Instant::now();
+                let res = black_box(fft64_batch(data));
+                dt += start.elapsed();
+                drop(res);
+            }
+            dt
+        })
     });
 }
 
