@@ -13,7 +13,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter_custom(|iters| {
             let mut dt = Duration::default();
             for _i in 0..iters {
-                let data = y.clone();
+                let data = y.as_slice();
                 let start = Instant::now();
                 let res = black_box(fft32(data));
                 dt += start.elapsed();
@@ -27,7 +27,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter_custom(|iters| {
             let mut dt = Duration::default();
             for _i in 0..iters {
-                let data = vec![y.clone(); 100];
+                let data = &[y.as_slice(); 100];
                 let start = Instant::now();
                 let res = black_box(fft32_batch(data));
                 dt += start.elapsed();
@@ -47,7 +47,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter_custom(|iters| {
             let mut dt = Duration::default();
             for _i in 0..iters {
-                let data = y.clone();
+                let data = y.as_slice();
                 let start = Instant::now();
                 let res = black_box(fft64(data));
                 dt += start.elapsed();
@@ -61,10 +61,26 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter_custom(|iters| {
             let mut dt = Duration::default();
             for _i in 0..iters {
-                let data = vec![y.clone(); 100];
+                let data = &[y.as_slice(); 100];
                 let start = Instant::now();
                 let res = black_box(fft64_batch(data));
                 dt += start.elapsed();
+                drop(res);
+            }
+            dt
+        })
+    });
+
+    c.bench_function("fft64 to 32 2^20", |b| {
+        b.iter_custom(|iters| {
+            let mut dt = Duration::default();
+            for _i in 0..iters {
+                let data = y.clone();
+                let start = Instant::now();
+                let data = data.into_iter().map(|x| x as f32).collect::<Vec<_>>();
+                let res = black_box(fft32(data.as_slice()));
+                dt += start.elapsed();
+                drop(data);
                 drop(res);
             }
             dt

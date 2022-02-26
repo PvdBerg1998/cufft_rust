@@ -121,15 +121,15 @@ fn can_host_register_readonly() -> bool {
     f32 helpers
 */
 
-pub fn fft32_norm(data: Vec<f32>) -> Result<Vec<f32>> {
-    fft32_norm_batch(vec![data]).map(|mut batch| batch.pop().unwrap())
+pub fn fft32_norm(data: &[f32]) -> Result<Vec<f32>> {
+    fft32_norm_batch(&[data]).map(|mut batch| batch.pop().unwrap())
 }
 
-pub fn fft32(data: Vec<f32>) -> Result<Vec<Complex32>> {
-    fft32_batch(vec![data]).map(|mut batch| batch.pop().unwrap())
+pub fn fft32(data: &[f32]) -> Result<Vec<Complex32>> {
+    fft32_batch(&[data]).map(|mut batch| batch.pop().unwrap())
 }
 
-pub fn fft32_norm_batch(batch: Vec<Vec<f32>>) -> Result<Vec<Vec<f32>>> {
+pub fn fft32_norm_batch(batch: &[&[f32]]) -> Result<Vec<Vec<f32>>> {
     match fft32_batch(batch) {
         Ok(batch) => Ok(batch
             .into_iter()
@@ -139,7 +139,7 @@ pub fn fft32_norm_batch(batch: Vec<Vec<f32>>) -> Result<Vec<Vec<f32>>> {
     }
 }
 
-pub fn fft32_batch(batch: Vec<Vec<f32>>) -> Result<Vec<Vec<Complex32>>> {
+pub fn fft32_batch(batch: &[&[f32]]) -> Result<Vec<Vec<Complex32>>> {
     unsafe { fft_batch::<FFT32>(batch) }
 }
 
@@ -147,15 +147,15 @@ pub fn fft32_batch(batch: Vec<Vec<f32>>) -> Result<Vec<Vec<Complex32>>> {
     f64 helpers
 */
 
-pub fn fft64_norm(data: Vec<f64>) -> Result<Vec<f64>> {
-    fft64_norm_batch(vec![data]).map(|mut batch| batch.pop().unwrap())
+pub fn fft64_norm(data: &[f64]) -> Result<Vec<f64>> {
+    fft64_norm_batch(&[data]).map(|mut batch| batch.pop().unwrap())
 }
 
-pub fn fft64(data: Vec<f64>) -> Result<Vec<Complex64>> {
-    fft64_batch(vec![data]).map(|mut batch| batch.pop().unwrap())
+pub fn fft64(data: &[f64]) -> Result<Vec<Complex64>> {
+    fft64_batch(&[data]).map(|mut batch| batch.pop().unwrap())
 }
 
-pub fn fft64_norm_batch(batch: Vec<Vec<f64>>) -> Result<Vec<Vec<f64>>> {
+pub fn fft64_norm_batch(batch: &[&[f64]]) -> Result<Vec<Vec<f64>>> {
     match fft64_batch(batch) {
         Ok(batch) => Ok(batch
             .into_iter()
@@ -165,7 +165,7 @@ pub fn fft64_norm_batch(batch: Vec<Vec<f64>>) -> Result<Vec<Vec<f64>>> {
     }
 }
 
-pub fn fft64_batch(batch: Vec<Vec<f64>>) -> Result<Vec<Vec<Complex64>>> {
+pub fn fft64_batch(batch: &[&[f64]]) -> Result<Vec<Vec<Complex64>>> {
     unsafe { fft_batch::<FFT64>(batch) }
 }
 
@@ -173,9 +173,7 @@ pub fn fft64_batch(batch: Vec<Vec<f64>>) -> Result<Vec<Vec<Complex64>>> {
     Generic implementation
 */
 
-unsafe fn fft_batch<MODE: FFTMode>(
-    batch: Vec<Vec<MODE::Float>>,
-) -> Result<Vec<Vec<MODE::Complex>>> {
+unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<MODE::Complex>>> {
     if gpu_count() == 0 {
         return Err(CudaError::NoDevice);
     }
@@ -196,7 +194,7 @@ unsafe fn fft_batch<MODE: FFTMode>(
     }
 
     // Check data length uniformity
-    for data in &batch {
+    for data in batch {
         if data.len() != n {
             return Err(CudaError::InvalidValue);
         }
@@ -243,11 +241,11 @@ unsafe fn fft_batch<MODE: FFTMode>(
     });
 
     // Initialize GPU memory
-    for (i, mut data) in batch.into_iter().enumerate() {
+    for (i, data) in batch.into_iter().enumerate() {
         // Page lock memory for DMA
         if can_host_register() {
             CudaError::from_raw(cudaHostRegister(
-                data.as_mut_ptr() as *mut _,
+                data.as_ptr() as *mut _,
                 bytes_single as size_t,
                 if can_host_register_readonly() {
                     cudaHostRegisterReadOnly
@@ -257,7 +255,7 @@ unsafe fn fft_batch<MODE: FFTMode>(
             ))?;
         }
 
-        let _guard = guard(data.as_mut_ptr(), |ptr| {
+        let _guard = guard(data.as_ptr(), |ptr| {
             // Undo page lock
             if can_host_register() {
                 let _ = cudaHostUnregister(ptr as *mut _);
@@ -266,7 +264,7 @@ unsafe fn fft_batch<MODE: FFTMode>(
 
         CudaError::from_raw(cudaMemcpy(
             (*gpu_data_in).offset((n * i) as isize) as *mut _,
-            data.as_mut_ptr() as *const _,
+            data.as_ptr() as *const _,
             bytes_single as size_t,
             cudaMemcpyKind_cudaMemcpyHostToDevice,
         ))?;
@@ -373,6 +371,8 @@ unsafe impl FFTMode for FFT64 {
 fn test_cuda_device() {
     dbg!(gpu_count());
     dbg!(gpu_name().unwrap());
+    dbg!(can_host_register());
+    dbg!(can_host_register_readonly());
     let megabytes = gpu_memory().unwrap() / 10u64.pow(6);
     dbg!(megabytes);
 }
@@ -384,7 +384,7 @@ fn test_fft32() {
         .map(|x| x as f32 / 100.0 * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let fft = fft32_norm(y).unwrap();
+    let fft = fft32_norm(y.as_slice()).unwrap();
 
     // f = k/T so 1=k/(16384 / 100) -> k=164
     assert!(fft[164] > fft[163]);
@@ -398,7 +398,7 @@ fn test_fft32_batch() {
         .map(|x| x as f32 / 2.0f32.powi(8) * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let batch = fft32_norm_batch(vec![y; 100]).unwrap();
+    let batch = fft32_norm_batch(&[y.as_slice(); 100]).unwrap();
 
     let fft_0 = &batch[0];
     for fft in batch.iter() {
@@ -413,7 +413,7 @@ fn test_fft64() {
         .map(|x| x as f64 / 100.0 * std::f64::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let fft = fft64_norm(y).unwrap();
+    let fft = fft64_norm(y.as_slice()).unwrap();
 
     // f = k/T so 1=k/(16384 / 100) -> k=164
     assert!(fft[164] > fft[163]);
@@ -427,7 +427,7 @@ fn test_fft64_batch() {
         .map(|x| x as f64 / 2.0f64.powi(8) * std::f64::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let batch = fft64_norm_batch(vec![y; 100]).unwrap();
+    let batch = fft64_norm_batch(&[y.as_slice(); 100]).unwrap();
 
     let fft_0 = &batch[0];
     for fft in batch.iter() {
