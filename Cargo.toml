@@ -1,9 +1,11 @@
 [package]
 authors = ["Pim van den Berg"]
+description = "A safe cuFFT wrapper"
 edition = "2021"
 license-file = "LICENSE"
 name = "cufft_rust"
 version = "0.4.1"
+repository = "https://github.com/PvdBerg1998/cufft_rust"
 
 [dependencies]
 drop_guard = "0.3.0"
