@@ -1,6 +1,7 @@
 [package]
 authors = ["Pim van den Berg"]
 description = "A safe cuFFT wrapper"
+categories = ["algorithms", "mathematics", "science", "api-bindings", "hardware-support"]
 edition = "2021"
 license-file = "LICENSE"
 name = "cufft_rust"
