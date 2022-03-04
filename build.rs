@@ -26,8 +26,10 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings");
 
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let out = out.join("bindings.rs");
     bindings
-        .write_to_file("bindings.rs")
+        .write_to_file(out)
         .expect("Couldn't write bindings!");
 }
 
