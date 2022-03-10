@@ -15,7 +15,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = y.as_slice();
                 let start = Instant::now();
-                let res = black_box(fft32(data));
+                let res = black_box(fft32(data, 0, None));
                 dt += start.elapsed();
                 drop(res);
             }
@@ -29,22 +29,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = &[y.as_slice(); 100];
                 let start = Instant::now();
-                let res = black_box(fft32_batch(data));
-                dt += start.elapsed();
-                drop(res);
-            }
-            dt
-        })
-    });
-
-    let y_contiguous = std::iter::repeat(y).take(100).flatten().collect::<Vec<_>>();
-    c.bench_function("fft32 2^20 batch 100 contiguous", |b| {
-        b.iter_custom(|iters| {
-            let mut dt = Duration::default();
-            for _i in 0..iters {
-                let data = y_contiguous.as_slice();
-                let start = Instant::now();
-                let res = black_box(fft32_batch_contiguous(data, 100));
+                let res = black_box(fft32_batch(data, 0, None));
                 dt += start.elapsed();
                 drop(res);
             }
@@ -64,7 +49,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = y.as_slice();
                 let start = Instant::now();
-                let res = black_box(fft64(data));
+                let res = black_box(fft64(data, 0, None));
                 dt += start.elapsed();
                 drop(res);
             }
@@ -78,7 +63,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = &[y.as_slice(); 100];
                 let start = Instant::now();
-                let res = black_box(fft64_batch(data));
+                let res = black_box(fft64_batch(data, 0, None));
                 dt += start.elapsed();
                 drop(res);
             }
@@ -93,24 +78,9 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 let data = y.clone();
                 let start = Instant::now();
                 let data = data.into_iter().map(|x| x as f32).collect::<Vec<_>>();
-                let res = black_box(fft32(data.as_slice()));
+                let res = black_box(fft32(data.as_slice(), 0, None));
                 dt += start.elapsed();
                 drop(data);
-                drop(res);
-            }
-            dt
-        })
-    });
-
-    let y_contiguous = std::iter::repeat(y).take(100).flatten().collect::<Vec<_>>();
-    c.bench_function("fft64 2^20 batch 100 contiguous", |b| {
-        b.iter_custom(|iters| {
-            let mut dt = Duration::default();
-            for _i in 0..iters {
-                let data = y_contiguous.as_slice();
-                let start = Instant::now();
-                let res = black_box(fft64_batch_contiguous(data, 100));
-                dt += start.elapsed();
                 drop(res);
             }
             dt
@@ -129,7 +99,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = &[y.as_slice(); 1000];
                 let start = Instant::now();
-                let res = black_box(fft64_batch(data));
+                let res = black_box(fft64_batch(data, 0, None));
                 dt += start.elapsed();
                 drop(res);
             }
@@ -144,7 +114,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 let data = y.clone();
                 let start = Instant::now();
                 let data = data.into_iter().map(|x| x as f32).collect::<Vec<_>>();
-                let res = black_box(fft32(data.as_slice()));
+                let res = black_box(fft32(data.as_slice(), 0, None));
                 dt += start.elapsed();
                 drop(data);
                 drop(res);
@@ -153,18 +123,34 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         })
     });
 
-    let y_contiguous = std::iter::repeat(y)
-        .take(1000)
-        .flatten()
-        .collect::<Vec<_>>();
-    c.bench_function("fft64 2^10 batch 1000 contiguous", |b| {
+    c.bench_function("fft64 2^10 padded to 2^20", |b| {
         b.iter_custom(|iters| {
             let mut dt = Duration::default();
             for _i in 0..iters {
-                let data = y_contiguous.as_slice();
+                let data = y.as_slice();
                 let start = Instant::now();
-                let res = black_box(fft64_batch_contiguous(data, 1000));
+                let res = black_box(fft64(data, 2usize.pow(20) - data.len(), None));
                 dt += start.elapsed();
+                drop(data);
+                drop(res);
+            }
+            dt
+        })
+    });
+
+    c.bench_function("fft64 2^10 padded to 2^20 truncated 2^16", |b| {
+        b.iter_custom(|iters| {
+            let mut dt = Duration::default();
+            for _i in 0..iters {
+                let data = y.as_slice();
+                let start = Instant::now();
+                let res = black_box(fft64(
+                    data,
+                    2usize.pow(20) - data.len(),
+                    Some(2usize.pow(16)),
+                ));
+                dt += start.elapsed();
+                drop(data);
                 drop(res);
             }
             dt

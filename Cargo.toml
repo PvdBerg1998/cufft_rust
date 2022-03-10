@@ -5,7 +5,7 @@ categories = ["algorithms", "mathematics", "science", "api-bindings", "hardware-
 edition = "2021"
 license-file = "LICENSE"
 name = "cufft_rust"
-version = "0.4.2"
+version = "0.5.0"
 repository = "https://github.com/PvdBerg1998/cufft_rust"
 
 [dependencies]

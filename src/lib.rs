@@ -39,6 +39,12 @@ use num_traits::Zero;
 use std::cell::Cell;
 use std::thread_local;
 
+pub fn frequencies(dt: f64, n: usize) -> impl Iterator<Item = f64> {
+    // Sampled frequencies : k/(N dt)
+    let freq_normalisation = 1.0 / (dt * n as f64);
+    (0..n).map(move |i| i as f64 * freq_normalisation)
+}
+
 pub fn gpu_count() -> usize {
     thread_local! {
         // Cache to reduce calls to driver
@@ -121,16 +127,20 @@ fn can_host_register_readonly() -> bool {
     f32 helpers
 */
 
-pub fn fft32(data: &[f32]) -> Result<Vec<Complex32>> {
-    fft32_batch_contiguous(data, 1).map(|mut batch| batch.pop().unwrap())
+pub fn fft32(data: &[f32], add_zeroes: usize, n_out: Option<usize>) -> Result<Vec<Complex32>> {
+    fft32_batch(&[data], add_zeroes, n_out).map(|mut batch| batch.pop().unwrap())
 }
 
-pub fn fft32_norm(data: &[f32]) -> Result<Vec<f32>> {
-    fft32_norm_batch_contiguous(data, 1).map(|mut batch| batch.pop().unwrap())
+pub fn fft32_norm(data: &[f32], add_zeroes: usize, n_out: Option<usize>) -> Result<Vec<f32>> {
+    fft32_norm_batch(&[data], add_zeroes, n_out).map(|mut batch| batch.pop().unwrap())
 }
 
-pub fn fft32_norm_batch(batch: &[&[f32]]) -> Result<Vec<Vec<f32>>> {
-    match fft32_batch(batch) {
+pub fn fft32_norm_batch(
+    batch: &[&[f32]],
+    add_zeroes: usize,
+    n_out: Option<usize>,
+) -> Result<Vec<Vec<f32>>> {
+    match fft32_batch(batch, add_zeroes, n_out) {
         Ok(batch) => Ok(batch
             .into_iter()
             .map(|fft| fft.into_iter().map(|z| z.norm()).collect())
@@ -139,38 +149,32 @@ pub fn fft32_norm_batch(batch: &[&[f32]]) -> Result<Vec<Vec<f32>>> {
     }
 }
 
-pub fn fft32_norm_batch_contiguous(batch: &[f32], n_batch: usize) -> Result<Vec<Vec<f32>>> {
-    match fft32_batch_contiguous(batch, n_batch) {
-        Ok(batch) => Ok(batch
-            .into_iter()
-            .map(|fft| fft.into_iter().map(|z| z.norm()).collect())
-            .collect()),
-        Err(e) => Err(e),
-    }
-}
-
-pub fn fft32_batch(batch: &[&[f32]]) -> Result<Vec<Vec<Complex32>>> {
-    unsafe { fft_batch::<FFT32>(batch) }
-}
-
-pub fn fft32_batch_contiguous(batch: &[f32], n_batch: usize) -> Result<Vec<Vec<Complex32>>> {
-    unsafe { fft_batch_contiguous::<FFT32>(batch, n_batch) }
+pub fn fft32_batch(
+    batch: &[&[f32]],
+    add_zeroes: usize,
+    n_out: Option<usize>,
+) -> Result<Vec<Vec<Complex32>>> {
+    unsafe { fft_batch::<FFT32>(batch, add_zeroes, n_out) }
 }
 
 /*
     f64 helpers
 */
 
-pub fn fft64(data: &[f64]) -> Result<Vec<Complex64>> {
-    fft64_batch_contiguous(data, 1).map(|mut batch| batch.pop().unwrap())
+pub fn fft64(data: &[f64], add_zeroes: usize, n_out: Option<usize>) -> Result<Vec<Complex64>> {
+    fft64_batch(&[data], add_zeroes, n_out).map(|mut batch| batch.pop().unwrap())
 }
 
-pub fn fft64_norm(data: &[f64]) -> Result<Vec<f64>> {
-    fft64_norm_batch_contiguous(data, 1).map(|mut batch| batch.pop().unwrap())
+pub fn fft64_norm(data: &[f64], add_zeroes: usize, n_out: Option<usize>) -> Result<Vec<f64>> {
+    fft64_norm_batch(&[data], add_zeroes, n_out).map(|mut batch| batch.pop().unwrap())
 }
 
-pub fn fft64_norm_batch(batch: &[&[f64]]) -> Result<Vec<Vec<f64>>> {
-    match fft64_batch(batch) {
+pub fn fft64_norm_batch(
+    batch: &[&[f64]],
+    add_zeroes: usize,
+    n_out: Option<usize>,
+) -> Result<Vec<Vec<f64>>> {
+    match fft64_batch(batch, add_zeroes, n_out) {
         Ok(batch) => Ok(batch
             .into_iter()
             .map(|fft| fft.into_iter().map(|z| z.norm()).collect())
@@ -179,167 +183,32 @@ pub fn fft64_norm_batch(batch: &[&[f64]]) -> Result<Vec<Vec<f64>>> {
     }
 }
 
-pub fn fft64_norm_batch_contiguous(batch: &[f64], n_batch: usize) -> Result<Vec<Vec<f64>>> {
-    match fft64_batch_contiguous(batch, n_batch) {
-        Ok(batch) => Ok(batch
-            .into_iter()
-            .map(|fft| fft.into_iter().map(|z| z.norm()).collect())
-            .collect()),
-        Err(e) => Err(e),
-    }
-}
-
-pub fn fft64_batch(batch: &[&[f64]]) -> Result<Vec<Vec<Complex64>>> {
-    unsafe { fft_batch::<FFT64>(batch) }
-}
-
-pub fn fft64_batch_contiguous(batch: &[f64], n_batch: usize) -> Result<Vec<Vec<Complex64>>> {
-    unsafe { fft_batch_contiguous::<FFT64>(batch, n_batch) }
+pub fn fft64_batch(
+    batch: &[&[f64]],
+    add_zeroes: usize,
+    n_out: Option<usize>,
+) -> Result<Vec<Vec<Complex64>>> {
+    unsafe { fft_batch::<FFT64>(batch, add_zeroes, n_out) }
 }
 
 /*
     Generic implementation
 */
 
-unsafe fn fft_batch_contiguous<MODE: FFTMode>(
-    batch: &[MODE::Float],
-    n_batch: usize,
+unsafe fn fft_batch<MODE: FFTMode>(
+    batch: &[&[MODE::Float]],
+    add_zeroes: usize,
+    n_out: Option<usize>,
 ) -> Result<Vec<Vec<MODE::Complex>>> {
-    if gpu_count() == 0 {
-        return Err(CudaError::NoDevice);
-    }
+    debug_assert_eq!(
+        std::mem::size_of::<MODE::Float>(),
+        std::mem::size_of::<MODE::CudaIn>()
+    );
+    debug_assert_eq!(
+        std::mem::size_of::<MODE::Complex>(),
+        std::mem::size_of::<MODE::CudaOut>()
+    );
 
-    // Amount of points per dataset
-    let n = batch.len() / n_batch;
-    // Amount of complex values per DFT of a dataset
-    let n_dft = n / 2 + 1;
-
-    // Deal with empty datasets
-    if n_batch == 0 {
-        return Ok(vec![]);
-    }
-    if n == 0 {
-        return Ok(vec![vec![]; n_batch]);
-    }
-
-    // Check for trailing values
-    if batch.len() != n * n_batch {
-        return Err(CudaError::InvalidValue);
-    }
-
-    // Byte size of a dataset
-    let bytes_single = std::mem::size_of::<MODE::CudaIn>() * n;
-    // Byte size of the batch
-    let bytes_batch = bytes_single * n_batch;
-    // Byte size of the DFT of a dataset
-    let bytes_single_dft = std::mem::size_of::<MODE::CudaOut>() * n_dft;
-    // Byte size of the DFT batch
-    let bytes_batch_dft = bytes_single_dft * n_batch;
-
-    // Prepare plan
-    let mut plan: cufftHandle = 0;
-    CudaError::from_raw(cufftPlan1d(
-        &mut plan,
-        n as i32,
-        MODE::FFT_TYPE,
-        n_batch as i32,
-    ))?;
-    let plan = guard(plan, |plan| {
-        let _ = cufftDestroy(plan);
-    });
-
-    // Allocate space on GPU
-    let mut gpu_data_in: *mut MODE::CudaIn = std::ptr::null_mut();
-    CudaError::from_raw(cudaMalloc(
-        &mut gpu_data_in as *mut _ as *mut _,
-        bytes_batch as size_t,
-    ))?;
-    let gpu_data_in = guard(gpu_data_in, |gpu_data_in| {
-        let _ = cudaFree(gpu_data_in as *mut _);
-    });
-
-    let mut gpu_data_out: *mut MODE::CudaOut = std::ptr::null_mut();
-    CudaError::from_raw(cudaMalloc(
-        &mut gpu_data_out as *mut _ as *mut _,
-        bytes_batch_dft as size_t,
-    ))?;
-    let gpu_data_out = guard(gpu_data_out, |gpu_data_out| {
-        let _ = cudaFree(gpu_data_out as *mut _);
-    });
-
-    // Initialize GPU memory
-    // Page lock memory for DMA
-    if can_host_register() {
-        CudaError::from_raw(cudaHostRegister(
-            batch.as_ptr() as *mut _,
-            bytes_batch as size_t,
-            if can_host_register_readonly() {
-                cudaHostRegisterReadOnly
-            } else {
-                cudaHostRegisterDefault
-            },
-        ))?;
-    }
-
-    let _guard = guard(batch.as_ptr(), |ptr| {
-        // Undo page lock
-        if can_host_register() {
-            let _ = cudaHostUnregister(ptr as *mut _);
-        }
-    });
-
-    CudaError::from_raw(cudaMemcpy(
-        *gpu_data_in as *mut _,
-        batch.as_ptr() as *const _,
-        bytes_batch as size_t,
-        cudaMemcpyKind_cudaMemcpyHostToDevice,
-    ))?;
-
-    drop(_guard);
-
-    // Execute FFT
-    // Unnormalized
-    // Recommendations: https://docs.nvidia.com/cuda/cufft/index.html#accuracy-and-performance
-    CudaError::from_raw(MODE::exec(*plan, *gpu_data_in, *gpu_data_out))?;
-    CudaError::from_raw(cudaDeviceSynchronize())?;
-
-    // Retrieve results
-    // NB. vec![Vec::with_capacity()] does NOT keep the capacity between the cloned values!
-    let mut buf = (0..n_batch)
-        .map(|_| Vec::<MODE::Complex>::with_capacity(n_dft))
-        .collect::<Vec<_>>();
-    for (i, out) in buf.iter_mut().enumerate() {
-        // Page lock memory for DMA
-        if can_host_register() {
-            CudaError::from_raw(cudaHostRegister(
-                out.as_mut_ptr() as *mut _,
-                bytes_single_dft as size_t,
-                cudaHostRegisterDefault,
-            ))?;
-        }
-
-        let _guard = guard(out.as_mut_ptr(), |ptr| {
-            // Undo page lock
-            if can_host_register() {
-                let _ = cudaHostUnregister(ptr as *mut _);
-            }
-        });
-
-        CudaError::from_raw(cudaMemcpy(
-            out.as_mut_ptr() as *mut _,
-            (*gpu_data_out).offset((i * n_dft) as isize) as *const _ as *const _,
-            bytes_single_dft as size_t,
-            cudaMemcpyKind_cudaMemcpyDeviceToHost,
-        ))?;
-
-        // Safety: cudaMemcpy will initialize all n_dft values
-        out.set_len(n_dft);
-    }
-
-    Ok(buf)
-}
-
-unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<MODE::Complex>>> {
     if gpu_count() == 0 {
         return Err(CudaError::NoDevice);
     }
@@ -348,8 +217,15 @@ unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<M
     let n_batch = batch.len();
     // Amount of points per dataset
     let n = batch[0].len();
-    // Amount of complex values per DFT of a dataset
-    let n_dft = n / 2 + 1;
+    // Amount of complex values per FFT of a dataset
+    let n_complex = (n + add_zeroes) / 2 + 1;
+
+    // Check if n_out has a reasonable value
+    if let Some(n_out) = n_out {
+        if n_out > n_complex {
+            return Err(CudaError::InvalidValue);
+        }
+    }
 
     // Deal with empty datasets
     if n_batch == 0 {
@@ -367,19 +243,23 @@ unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<M
     }
 
     // Byte size of a dataset
-    let bytes_single = std::mem::size_of::<MODE::CudaIn>() * n;
+    let bytes_single_cpu = std::mem::size_of::<MODE::CudaIn>() * n;
+    let bytes_single_gpu = std::mem::size_of::<MODE::CudaIn>() * (n + add_zeroes);
+
     // Byte size of the batch
-    let bytes_batch = bytes_single * n_batch;
-    // Byte size of the DFT of a dataset
-    let bytes_single_dft = std::mem::size_of::<MODE::CudaOut>() * n_dft;
-    // Byte size of the DFT batch
-    let bytes_batch_dft = bytes_single_dft * n_batch;
+    //let bytes_batch_cpu = bytes_single_cpu * n_batch;
+    let bytes_batch_gpu = bytes_single_gpu * n_batch;
+
+    // Byte size of the FFT of a dataset
+    let bytes_single_complex_gpu = std::mem::size_of::<MODE::CudaOut>() * n_complex;
+    // Byte size of the FFT batch
+    let bytes_batch_complex_gpu = bytes_single_complex_gpu * n_batch;
 
     // Prepare plan
     let mut plan: cufftHandle = 0;
     CudaError::from_raw(cufftPlan1d(
         &mut plan,
-        n as i32,
+        (n + add_zeroes) as i32,
         MODE::FFT_TYPE,
         n_batch as i32,
     ))?;
@@ -391,7 +271,7 @@ unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<M
     let mut gpu_data_in: *mut MODE::CudaIn = std::ptr::null_mut();
     CudaError::from_raw(cudaMalloc(
         &mut gpu_data_in as *mut _ as *mut _,
-        bytes_batch as size_t,
+        bytes_batch_gpu as size_t,
     ))?;
     let gpu_data_in = guard(gpu_data_in, |gpu_data_in| {
         let _ = cudaFree(gpu_data_in as *mut _);
@@ -400,19 +280,19 @@ unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<M
     let mut gpu_data_out: *mut MODE::CudaOut = std::ptr::null_mut();
     CudaError::from_raw(cudaMalloc(
         &mut gpu_data_out as *mut _ as *mut _,
-        bytes_batch_dft as size_t,
+        bytes_batch_complex_gpu as size_t,
     ))?;
     let gpu_data_out = guard(gpu_data_out, |gpu_data_out| {
         let _ = cudaFree(gpu_data_out as *mut _);
     });
 
     // Initialize GPU memory
-    for (i, data) in batch.into_iter().enumerate() {
+    for (i, data) in batch.iter().enumerate() {
         // Page lock memory for DMA
         if can_host_register() {
             CudaError::from_raw(cudaHostRegister(
                 data.as_ptr() as *mut _,
-                bytes_single as size_t,
+                bytes_single_cpu as size_t,
                 if can_host_register_readonly() {
                     cudaHostRegisterReadOnly
                 } else {
@@ -428,12 +308,23 @@ unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<M
             }
         });
 
+        // Copy data to GPU
         CudaError::from_raw(cudaMemcpy(
-            (*gpu_data_in).offset((n * i) as isize) as *mut _,
+            (*gpu_data_in).add((n + add_zeroes) * i) as *mut _,
             data.as_ptr() as *const _,
-            bytes_single as size_t,
+            bytes_single_cpu as size_t,
             cudaMemcpyKind_cudaMemcpyHostToDevice,
         ))?;
+
+        // We already allocated memory for zero padding, but the values are still undefined.
+        // Therefore we must set the remaining values to zero.
+        if add_zeroes > 0 {
+            CudaError::from_raw(cudaMemset(
+                (*gpu_data_in).add((n + add_zeroes) * i + n) as *mut _,
+                0,
+                (bytes_single_gpu - bytes_single_cpu) as size_t,
+            ))?;
+        }
     }
 
     // Execute FFT
@@ -445,14 +336,17 @@ unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<M
     // Retrieve results
     // NB. vec![Vec::with_capacity()] does NOT keep the capacity between the cloned values!
     let mut buf = (0..n_batch)
-        .map(|_| Vec::<MODE::Complex>::with_capacity(n_dft))
+        .map(|_| Vec::<MODE::Complex>::with_capacity(n_out.unwrap_or(n_complex)))
         .collect::<Vec<_>>();
+
     for (i, out) in buf.iter_mut().enumerate() {
+        let out_bytes = out.capacity() * std::mem::size_of::<MODE::Complex>();
+
         // Page lock memory for DMA
         if can_host_register() {
             CudaError::from_raw(cudaHostRegister(
                 out.as_mut_ptr() as *mut _,
-                bytes_single_dft as size_t,
+                out_bytes as size_t,
                 cudaHostRegisterDefault,
             ))?;
         }
@@ -466,13 +360,13 @@ unsafe fn fft_batch<MODE: FFTMode>(batch: &[&[MODE::Float]]) -> Result<Vec<Vec<M
 
         CudaError::from_raw(cudaMemcpy(
             out.as_mut_ptr() as *mut _,
-            (*gpu_data_out).offset((i * n_dft) as isize) as *const _ as *const _,
-            bytes_single_dft as size_t,
+            (*gpu_data_out).add(i * n_complex) as *const _ as *const _,
+            out_bytes as size_t,
             cudaMemcpyKind_cudaMemcpyDeviceToHost,
         ))?;
 
-        // Safety: cudaMemcpy will initialize all n_dft values
-        out.set_len(n_dft);
+        // Safety: cudaMemcpy will initialize all allocated values
+        out.set_len(out.capacity());
     }
 
     Ok(buf)
@@ -482,9 +376,8 @@ unsafe trait FFTMode {
     type Float: Copy + Clone;
     type Complex: Copy + Clone + Zero;
 
+    // These must be transmutable to Float/Complex
     type CudaIn: Copy + Clone;
-
-    // Safety: must be transmutable to Complex
     type CudaOut: Copy + Clone;
 
     const FFT_TYPE: cufftType_t;
@@ -551,7 +444,7 @@ fn test_fft32() {
         .map(|x| x as f32 / 100.0 * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let fft = fft32_norm(y.as_slice()).unwrap();
+    let fft = fft32_norm(y.as_slice(), 0, None).unwrap();
 
     // f = k/T so 1=k/(16384 / 100) -> k=164
     assert!(fft[164] > fft[163]);
@@ -565,16 +458,10 @@ fn test_fft32_batch() {
         .map(|x| x as f32 / 2.0f32.powi(8) * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let batch = fft32_norm_batch(&[y.as_slice(); 100]).unwrap();
-
-    let y_contiguous = std::iter::repeat(y).take(100).flatten().collect::<Vec<_>>();
-    let batch_contiguous = fft32_norm_batch_contiguous(&y_contiguous, 100).unwrap();
+    let batch = fft32_norm_batch(&[y.as_slice(); 100], 0, None).unwrap();
 
     let fft_0 = &batch[0];
     for fft in batch.iter() {
-        approx::assert_abs_diff_eq!(fft_0.as_slice(), fft.as_slice());
-    }
-    for fft in batch_contiguous.iter() {
         approx::assert_abs_diff_eq!(fft_0.as_slice(), fft.as_slice());
     }
 }
@@ -586,7 +473,7 @@ fn test_fft64() {
         .map(|x| x as f64 / 100.0 * std::f64::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let fft = fft64_norm(y.as_slice()).unwrap();
+    let fft = fft64_norm(y.as_slice(), 0, None).unwrap();
 
     // f = k/T so 1=k/(16384 / 100) -> k=164
     assert!(fft[164] > fft[163]);
@@ -600,16 +487,42 @@ fn test_fft64_batch() {
         .map(|x| x as f64 / 2.0f64.powi(8) * std::f64::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let batch = fft64_norm_batch(&[y.as_slice(); 100]).unwrap();
-
-    let y_contiguous = std::iter::repeat(y).take(100).flatten().collect::<Vec<_>>();
-    let batch_contiguous = fft64_norm_batch_contiguous(&y_contiguous, 100).unwrap();
+    let batch = fft64_norm_batch(&[y.as_slice(); 100], 0, None).unwrap();
 
     let fft_0 = &batch[0];
     for fft in batch.iter() {
         approx::assert_abs_diff_eq!(fft_0.as_slice(), fft.as_slice());
     }
-    for fft in batch_contiguous.iter() {
-        approx::assert_abs_diff_eq!(fft_0.as_slice(), fft.as_slice());
-    }
+}
+
+#[test]
+fn test_fft64_zeropad() {
+    // Generate test data
+    let y = (0..2u64.pow(14)) // 16384
+        .map(|x| x as f64 / 100.0 * std::f64::consts::TAU)
+        .map(|x| x.cos())
+        .collect::<Vec<_>>();
+
+    // Pad to 2^20: add 1032192
+    let fft = fft64_norm(y.as_slice(), 1032192, None).unwrap();
+
+    // Expected length: n/2 + 1 = 2^19 + 1 = 524289
+    assert_eq!(fft.len(), 524289);
+
+    // f = k/T so 1=k/(1048576 / 100) -> k=10485.8
+    assert!(fft[10486] > fft[10485]);
+    assert!(fft[10486] > fft[10487]);
+}
+
+#[test]
+fn test_fft64_truncate() {
+    // Generate test data
+    let y = (0..2u64.pow(14)) // 16384
+        .map(|x| x as f64 / 100.0 * std::f64::consts::TAU)
+        .map(|x| x.cos())
+        .collect::<Vec<_>>();
+
+    let fft = fft64_norm(y.as_slice(), 0, Some(10)).unwrap();
+
+    assert_eq!(fft.len(), 10);
 }
