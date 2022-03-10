@@ -15,7 +15,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = y.as_slice();
                 let start = Instant::now();
-                let res = black_box(fft32(data, 0, None));
+                let res = black_box(fft32(data, data.len(), None));
                 dt += start.elapsed();
                 drop(res);
             }
@@ -29,7 +29,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = &[y.as_slice(); 100];
                 let start = Instant::now();
-                let res = black_box(fft32_batch(data, 0, None));
+                let res = black_box(fft32_batch(data, y.len(), None));
                 dt += start.elapsed();
                 drop(res);
             }
@@ -49,7 +49,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = y.as_slice();
                 let start = Instant::now();
-                let res = black_box(fft64(data, 0, None));
+                let res = black_box(fft64(data, data.len(), None));
                 dt += start.elapsed();
                 drop(res);
             }
@@ -63,7 +63,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = &[y.as_slice(); 100];
                 let start = Instant::now();
-                let res = black_box(fft64_batch(data, 0, None));
+                let res = black_box(fft64_batch(data, y.len(), None));
                 dt += start.elapsed();
                 drop(res);
             }
@@ -78,7 +78,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 let data = y.clone();
                 let start = Instant::now();
                 let data = data.into_iter().map(|x| x as f32).collect::<Vec<_>>();
-                let res = black_box(fft32(data.as_slice(), 0, None));
+                let res = black_box(fft32(data.as_slice(), data.len(), None));
                 dt += start.elapsed();
                 drop(data);
                 drop(res);
@@ -99,7 +99,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = &[y.as_slice(); 1000];
                 let start = Instant::now();
-                let res = black_box(fft64_batch(data, 0, None));
+                let res = black_box(fft64_batch(data, y.len(), None));
                 dt += start.elapsed();
                 drop(res);
             }
@@ -114,7 +114,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 let data = y.clone();
                 let start = Instant::now();
                 let data = data.into_iter().map(|x| x as f32).collect::<Vec<_>>();
-                let res = black_box(fft32(data.as_slice(), 0, None));
+                let res = black_box(fft32(data.as_slice(), data.len(), None));
                 dt += start.elapsed();
                 drop(data);
                 drop(res);
@@ -129,7 +129,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = y.as_slice();
                 let start = Instant::now();
-                let res = black_box(fft64(data, 2usize.pow(20) - data.len(), None));
+                let res = black_box(fft64(data, 2usize.pow(20), None));
                 dt += start.elapsed();
                 drop(data);
                 drop(res);
@@ -144,11 +144,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             for _i in 0..iters {
                 let data = y.as_slice();
                 let start = Instant::now();
-                let res = black_box(fft64(
-                    data,
-                    2usize.pow(20) - data.len(),
-                    Some(2usize.pow(16)),
-                ));
+                let res = black_box(fft64(data, 2usize.pow(20), Some(2usize.pow(16))));
                 dt += start.elapsed();
                 drop(data);
                 drop(res);

@@ -127,20 +127,20 @@ fn can_host_register_readonly() -> bool {
     f32 helpers
 */
 
-pub fn fft32(data: &[f32], add_zeroes: usize, n_out: Option<usize>) -> Result<Vec<Complex32>> {
-    fft32_batch(&[data], add_zeroes, n_out).map(|mut batch| batch.pop().unwrap())
+pub fn fft32(data: &[f32], n_padded: usize, n_out: Option<usize>) -> Result<Vec<Complex32>> {
+    fft32_batch(&[data], n_padded, n_out).map(|mut batch| batch.pop().unwrap())
 }
 
-pub fn fft32_norm(data: &[f32], add_zeroes: usize, n_out: Option<usize>) -> Result<Vec<f32>> {
-    fft32_norm_batch(&[data], add_zeroes, n_out).map(|mut batch| batch.pop().unwrap())
+pub fn fft32_norm(data: &[f32], n_padded: usize, n_out: Option<usize>) -> Result<Vec<f32>> {
+    fft32_norm_batch(&[data], n_padded, n_out).map(|mut batch| batch.pop().unwrap())
 }
 
 pub fn fft32_norm_batch(
     batch: &[&[f32]],
-    add_zeroes: usize,
+    n_padded: usize,
     n_out: Option<usize>,
 ) -> Result<Vec<Vec<f32>>> {
-    match fft32_batch(batch, add_zeroes, n_out) {
+    match fft32_batch(batch, n_padded, n_out) {
         Ok(batch) => Ok(batch
             .into_iter()
             .map(|fft| fft.into_iter().map(|z| z.norm()).collect())
@@ -151,30 +151,30 @@ pub fn fft32_norm_batch(
 
 pub fn fft32_batch(
     batch: &[&[f32]],
-    add_zeroes: usize,
+    n_padded: usize,
     n_out: Option<usize>,
 ) -> Result<Vec<Vec<Complex32>>> {
-    unsafe { fft_batch::<FFT32>(batch, add_zeroes, n_out) }
+    unsafe { fft_batch::<FFT32>(batch, n_padded, n_out) }
 }
 
 /*
     f64 helpers
 */
 
-pub fn fft64(data: &[f64], add_zeroes: usize, n_out: Option<usize>) -> Result<Vec<Complex64>> {
-    fft64_batch(&[data], add_zeroes, n_out).map(|mut batch| batch.pop().unwrap())
+pub fn fft64(data: &[f64], n_padded: usize, n_out: Option<usize>) -> Result<Vec<Complex64>> {
+    fft64_batch(&[data], n_padded, n_out).map(|mut batch| batch.pop().unwrap())
 }
 
-pub fn fft64_norm(data: &[f64], add_zeroes: usize, n_out: Option<usize>) -> Result<Vec<f64>> {
-    fft64_norm_batch(&[data], add_zeroes, n_out).map(|mut batch| batch.pop().unwrap())
+pub fn fft64_norm(data: &[f64], n_padded: usize, n_out: Option<usize>) -> Result<Vec<f64>> {
+    fft64_norm_batch(&[data], n_padded, n_out).map(|mut batch| batch.pop().unwrap())
 }
 
 pub fn fft64_norm_batch(
     batch: &[&[f64]],
-    add_zeroes: usize,
+    n_padded: usize,
     n_out: Option<usize>,
 ) -> Result<Vec<Vec<f64>>> {
-    match fft64_batch(batch, add_zeroes, n_out) {
+    match fft64_batch(batch, n_padded, n_out) {
         Ok(batch) => Ok(batch
             .into_iter()
             .map(|fft| fft.into_iter().map(|z| z.norm()).collect())
@@ -185,10 +185,10 @@ pub fn fft64_norm_batch(
 
 pub fn fft64_batch(
     batch: &[&[f64]],
-    add_zeroes: usize,
+    n_padded: usize,
     n_out: Option<usize>,
 ) -> Result<Vec<Vec<Complex64>>> {
-    unsafe { fft_batch::<FFT64>(batch, add_zeroes, n_out) }
+    unsafe { fft_batch::<FFT64>(batch, n_padded, n_out) }
 }
 
 /*
@@ -197,7 +197,7 @@ pub fn fft64_batch(
 
 unsafe fn fft_batch<MODE: FFTMode>(
     batch: &[&[MODE::Float]],
-    add_zeroes: usize,
+    n_padded: usize,
     n_out: Option<usize>,
 ) -> Result<Vec<Vec<MODE::Complex>>> {
     debug_assert_eq!(
@@ -215,51 +215,38 @@ unsafe fn fft_batch<MODE: FFTMode>(
 
     // Amount of datasets in the batch
     let n_batch = batch.len();
-    // Amount of points per dataset
-    let n = batch[0].len();
-    // Amount of complex values per FFT of a dataset
-    let n_complex = (n + add_zeroes) / 2 + 1;
 
-    // Check if n_out has a reasonable value
+    // Full size of FFT
+    let n_fft = n_padded / 2 + 1;
+
+    // Total length of unpadded data
+    let n_total_unpadded = batch.iter().map(|data| data.len()).sum::<usize>();
+
+    // Check requested n_out
     if let Some(n_out) = n_out {
-        if n_out > n_complex {
+        if n_out > n_fft {
             return Err(CudaError::InvalidValue);
         }
     }
+    let n_out = n_out.unwrap_or(n_fft);
 
     // Deal with empty datasets
     if n_batch == 0 {
         return Ok(vec![]);
     }
-    if n == 0 {
-        return Ok(vec![vec![]; n_batch]);
-    }
 
-    // Check data length uniformity
+    // Check if data length is uniform after padding
     for data in batch {
-        if data.len() != n {
+        if data.len() > n_padded {
             return Err(CudaError::InvalidValue);
         }
     }
-
-    // Byte size of a dataset
-    let bytes_single_cpu = std::mem::size_of::<MODE::CudaIn>() * n;
-    let bytes_single_gpu = std::mem::size_of::<MODE::CudaIn>() * (n + add_zeroes);
-
-    // Byte size of the batch
-    //let bytes_batch_cpu = bytes_single_cpu * n_batch;
-    let bytes_batch_gpu = bytes_single_gpu * n_batch;
-
-    // Byte size of the FFT of a dataset
-    let bytes_single_complex_gpu = std::mem::size_of::<MODE::CudaOut>() * n_complex;
-    // Byte size of the FFT batch
-    let bytes_batch_complex_gpu = bytes_single_complex_gpu * n_batch;
 
     // Prepare plan
     let mut plan: cufftHandle = 0;
     CudaError::from_raw(cufftPlan1d(
         &mut plan,
-        (n + add_zeroes) as i32,
+        n_padded as i32,
         MODE::FFT_TYPE,
         n_batch as i32,
     ))?;
@@ -271,7 +258,7 @@ unsafe fn fft_batch<MODE: FFTMode>(
     let mut gpu_data_in: *mut MODE::CudaIn = std::ptr::null_mut();
     CudaError::from_raw(cudaMalloc(
         &mut gpu_data_in as *mut _ as *mut _,
-        bytes_batch_gpu as size_t,
+        (n_padded * n_batch * std::mem::size_of::<MODE::CudaIn>()) as size_t,
     ))?;
     let gpu_data_in = guard(gpu_data_in, |gpu_data_in| {
         let _ = cudaFree(gpu_data_in as *mut _);
@@ -280,19 +267,33 @@ unsafe fn fft_batch<MODE: FFTMode>(
     let mut gpu_data_out: *mut MODE::CudaOut = std::ptr::null_mut();
     CudaError::from_raw(cudaMalloc(
         &mut gpu_data_out as *mut _ as *mut _,
-        bytes_batch_complex_gpu as size_t,
+        (n_fft * n_batch * std::mem::size_of::<MODE::CudaOut>()) as size_t,
     ))?;
     let gpu_data_out = guard(gpu_data_out, |gpu_data_out| {
         let _ = cudaFree(gpu_data_out as *mut _);
     });
 
+    // Zero input buffer if any zero padding is applied
+    if n_total_unpadded != n_batch * n_padded {
+        // Most of the time, zero padding >> actual data, so just write everything in one go
+        CudaError::from_raw(cudaMemset(
+            *gpu_data_in as *mut _,
+            0,
+            (n_padded * n_batch * std::mem::size_of::<MODE::CudaIn>()) as size_t,
+        ))?;
+    }
+
     // Initialize GPU memory
     for (i, data) in batch.iter().enumerate() {
+        if data.is_empty() {
+            continue;
+        }
+
         // Page lock memory for DMA
         if can_host_register() {
             CudaError::from_raw(cudaHostRegister(
                 data.as_ptr() as *mut _,
-                bytes_single_cpu as size_t,
+                (data.len() * std::mem::size_of::<MODE::Float>()) as size_t,
                 if can_host_register_readonly() {
                     cudaHostRegisterReadOnly
                 } else {
@@ -310,21 +311,11 @@ unsafe fn fft_batch<MODE: FFTMode>(
 
         // Copy data to GPU
         CudaError::from_raw(cudaMemcpy(
-            (*gpu_data_in).add((n + add_zeroes) * i) as *mut _,
+            (*gpu_data_in).add(n_padded * i) as *mut _,
             data.as_ptr() as *const _,
-            bytes_single_cpu as size_t,
+            (data.len() * std::mem::size_of::<MODE::Float>()) as size_t,
             cudaMemcpyKind_cudaMemcpyHostToDevice,
         ))?;
-
-        // We already allocated memory for zero padding, but the values are still undefined.
-        // Therefore we must set the remaining values to zero.
-        if add_zeroes > 0 {
-            CudaError::from_raw(cudaMemset(
-                (*gpu_data_in).add((n + add_zeroes) * i + n) as *mut _,
-                0,
-                (bytes_single_gpu - bytes_single_cpu) as size_t,
-            ))?;
-        }
     }
 
     // Execute FFT
@@ -334,19 +325,16 @@ unsafe fn fft_batch<MODE: FFTMode>(
     CudaError::from_raw(cudaDeviceSynchronize())?;
 
     // Retrieve results
-    // NB. vec![Vec::with_capacity()] does NOT keep the capacity between the cloned values!
-    let mut buf = (0..n_batch)
-        .map(|_| Vec::<MODE::Complex>::with_capacity(n_out.unwrap_or(n_complex)))
-        .collect::<Vec<_>>();
-
+    let mut buf = vec![vec![]; n_batch];
     for (i, out) in buf.iter_mut().enumerate() {
-        let out_bytes = out.capacity() * std::mem::size_of::<MODE::Complex>();
+        // NB. Capacity may be more than requested!
+        out.reserve_exact(n_out);
 
         // Page lock memory for DMA
         if can_host_register() {
             CudaError::from_raw(cudaHostRegister(
                 out.as_mut_ptr() as *mut _,
-                out_bytes as size_t,
+                (n_out * std::mem::size_of::<MODE::Complex>()) as size_t,
                 cudaHostRegisterDefault,
             ))?;
         }
@@ -360,13 +348,13 @@ unsafe fn fft_batch<MODE: FFTMode>(
 
         CudaError::from_raw(cudaMemcpy(
             out.as_mut_ptr() as *mut _,
-            (*gpu_data_out).add(i * n_complex) as *const _ as *const _,
-            out_bytes as size_t,
+            (*gpu_data_out).add(i * n_fft) as *const _ as *const _,
+            (n_out * std::mem::size_of::<MODE::Complex>()) as size_t,
             cudaMemcpyKind_cudaMemcpyDeviceToHost,
         ))?;
 
-        // Safety: cudaMemcpy will initialize all allocated values
-        out.set_len(out.capacity());
+        // Safety: cudaMemcpy will initialize n_out values
+        out.set_len(n_out);
     }
 
     Ok(buf)
@@ -444,7 +432,7 @@ fn test_fft32() {
         .map(|x| x as f32 / 100.0 * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let fft = fft32_norm(y.as_slice(), 0, None).unwrap();
+    let fft = fft32_norm(y.as_slice(), y.len(), None).unwrap();
 
     // f = k/T so 1=k/(16384 / 100) -> k=164
     assert!(fft[164] > fft[163]);
@@ -458,7 +446,7 @@ fn test_fft32_batch() {
         .map(|x| x as f32 / 2.0f32.powi(8) * std::f32::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let batch = fft32_norm_batch(&[y.as_slice(); 100], 0, None).unwrap();
+    let batch = fft32_norm_batch(&[y.as_slice(); 100], y.len(), None).unwrap();
 
     let fft_0 = &batch[0];
     for fft in batch.iter() {
@@ -473,7 +461,7 @@ fn test_fft64() {
         .map(|x| x as f64 / 100.0 * std::f64::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let fft = fft64_norm(y.as_slice(), 0, None).unwrap();
+    let fft = fft64_norm(y.as_slice(), y.len(), None).unwrap();
 
     // f = k/T so 1=k/(16384 / 100) -> k=164
     assert!(fft[164] > fft[163]);
@@ -487,7 +475,7 @@ fn test_fft64_batch() {
         .map(|x| x as f64 / 2.0f64.powi(8) * std::f64::consts::TAU)
         .map(|x| x.cos())
         .collect::<Vec<_>>();
-    let batch = fft64_norm_batch(&[y.as_slice(); 100], 0, None).unwrap();
+    let batch = fft64_norm_batch(&[y.as_slice(); 100], y.len(), None).unwrap();
 
     let fft_0 = &batch[0];
     for fft in batch.iter() {
@@ -503,8 +491,8 @@ fn test_fft64_zeropad() {
         .map(|x| x.cos())
         .collect::<Vec<_>>();
 
-    // Pad to 2^20: add 1032192
-    let fft = fft64_norm(y.as_slice(), 1032192, None).unwrap();
+    // Pad to 2^20
+    let fft = fft64_norm(y.as_slice(), 2usize.pow(20), None).unwrap();
 
     // Expected length: n/2 + 1 = 2^19 + 1 = 524289
     assert_eq!(fft.len(), 524289);
@@ -522,7 +510,7 @@ fn test_fft64_truncate() {
         .map(|x| x.cos())
         .collect::<Vec<_>>();
 
-    let fft = fft64_norm(y.as_slice(), 0, Some(10)).unwrap();
+    let fft = fft64_norm(y.as_slice(), y.len(), Some(10)).unwrap();
 
     assert_eq!(fft.len(), 10);
 }
